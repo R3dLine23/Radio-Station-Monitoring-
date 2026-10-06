@@ -1,0 +1,7 @@
+config.toml
+play_history.csv
+__pycache__/
+*.pyc
+.venv/
+.env
+data/

@@ -1,0 +1,98 @@
+# Backstreet Boys radio monitor configuration.
+#
+#   cp config.example.toml config.toml   # then edit config.toml
+#
+# config.toml is git-ignored because it holds your notification secrets.
+# Any string can reference an environment variable as "${NAME}".
+
+# ---------------------------------------------------------------------------
+# Stations
+#
+# Both stations stream through Rogers' Leanstream CDN. The /icy endpoint
+# sends the "now playing" title inside the audio stream and updates it the
+# moment the song changes (often a few seconds before you hear it).
+#
+# text_number / text_message: fill these in from the contest rules. When you
+# tap the alert on your phone, it opens a text to that number with the
+# message already typed.
+# ---------------------------------------------------------------------------
+[[stations]]
+name = "KISS 92.5"
+url = "https://rogers-hls.leanstream.co/rogers/tor925.stream/icy"
+text_number = ""        # e.g. "92592", the contest text line
+text_message = ""       # e.g. "BACKSTREET", the contest keyword
+
+[[stations]]
+name = "CHFI 98.1"
+url = "https://rogers-hls.leanstream.co/rogers/tor981.stream/icy"
+text_number = ""
+text_message = ""
+
+# ---------------------------------------------------------------------------
+# Matching. The defaults are sensible, so uncomment only what you want to change.
+# ---------------------------------------------------------------------------
+[match]
+# Strong match: the artist name appears in the metadata.
+# artist_aliases = ["backstreet", "backstreetboys", "back street boys", "bsb"]
+
+# Possible match: a BSB song title without the artist (flagged "Possible" in
+# the alert). Use extra_song_titles to add to the built-in list, or
+# song_titles to replace it.
+# extra_song_titles = ["Breathe", "Hey, Mr. DJ (Keep Playin' This Song)"]
+
+# ---------------------------------------------------------------------------
+# Behaviour
+# ---------------------------------------------------------------------------
+[settings]
+stale_after_seconds = 180     # warn if a station sends no data for this long
+realert_after_seconds = 900   # don't re-alert the same song within this window (metadata flicker)
+history_file = "play_history.csv"   # log of every song seen; "" to disable
+notify_on_start = true        # send a "monitor started" alert, which also confirms notifications work
+notify_on_outage = true       # alert when a station's feed goes down or comes back
+
+# ---------------------------------------------------------------------------
+# Notifications: enable as many as you like. They're all sent at once.
+# ---------------------------------------------------------------------------
+
+# Prints to the terminal and rings the bell.
+[notify.console]
+enabled = true
+bell = true
+
+# RECOMMENDED: free phone push notifications, no account needed.
+# 1. Install the "ntfy" app (iOS / Android).
+# 2. Subscribe to a topic name nobody else would guess.
+# 3. Put the same topic here. Priority 5 = loud, urgent alert.
+[notify.ntfy]
+enabled = false
+server = "https://ntfy.sh"
+topic = "bsb-contest-CHANGE-ME-7f3k2"
+priority = 5
+# token = "${NTFY_TOKEN}"   # only needed for protected topics / self-hosted servers
+
+# Pushover (one-time US$5 app). priority 2 = repeats until you acknowledge it.
+[notify.pushover]
+enabled = false
+user_key = "${PUSHOVER_USER}"
+app_token = "${PUSHOVER_TOKEN}"
+priority = 1
+sound = "siren"
+
+# Telegram bot: create one with @BotFather, then message it and look up your chat id.
+[notify.telegram]
+enabled = false
+bot_token = "${TELEGRAM_BOT_TOKEN}"
+chat_id = "${TELEGRAM_CHAT_ID}"
+
+# Real SMS through Twilio (paid).
+[notify.twilio]
+enabled = false
+account_sid = "${TWILIO_ACCOUNT_SID}"
+auth_token = "${TWILIO_AUTH_TOKEN}"
+from_number = "+15551234567"
+to_numbers = ["+14165551234"]
+
+# Discord or Slack incoming webhook (or any URL that accepts a JSON POST).
+[notify.webhook]
+enabled = false
+url = "${WEBHOOK_URL}"

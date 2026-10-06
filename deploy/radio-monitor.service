@@ -1,0 +1,20 @@
+# systemd unit: keeps the monitor running 24/7 and restarts it if it crashes.
+#   sudo cp deploy/radio-monitor.service /etc/systemd/system/
+#   (edit User= and WorkingDirectory= below)
+#   sudo systemctl daemon-reload && sudo systemctl enable --now radio-monitor
+#   journalctl -u radio-monitor -f        # watch the live log
+[Unit]
+Description=Backstreet Boys radio monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Radio-Station-Monitoring-
+ExecStart=/usr/bin/python3 -m radio_monitor --config config.toml
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+services:
+  radio-monitor:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./data:/app/data
+    # Secrets referenced as ${NAME} in config.toml can be supplied here or via a .env file.
+    env_file:
+      - path: .env
+        required: false

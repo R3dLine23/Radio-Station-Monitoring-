@@ -12,6 +12,7 @@ from pathlib import Path
 from . import config as cfgmod
 from .monitor import Monitor, open_station
 from .notifiers import Alert, ConsoleNotifier, build_notifiers
+from .web import extract_now_playing, fetch_page
 
 
 def _looks_like_station_id(title: str) -> bool:
@@ -20,11 +21,33 @@ def _looks_like_station_id(title: str) -> bool:
     return bool(sep) and left.strip().lower() == right.strip().lower()
 
 
+def _probe_web(station, timeout: float, matcher) -> bool:
+    """Check a website station's page once (polling it would wait forever on a bad page)."""
+    try:
+        np = extract_now_playing(fetch_page(station.url, timeout), station.call_letters)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  FAILED: {exc}")
+        return False
+    if np is None:
+        who = f" for {station.call_letters}" if station.call_letters else ""
+        print(f"  FAILED: the page has no now_playing entry{who}. Check url and call_letters.")
+        return False
+    if not np.display:
+        print("  OK: station found, but no current song right now (ads or talk). Try again in a few minutes.")
+        return True
+    print(f"  title:  {np.display!r}   match: {matcher.match(np.display)}")
+    print("  OK: received a song title")
+    return True
+
+
 def _probe(stations, seconds: float, matcher) -> int:
     """Connect to each station and print the raw metadata it sends."""
     ok = True
     for s in stations:
         print(f"\n== {s.name}  ({s.source}: {s.url})")
+        if s.source == "web":
+            ok = _probe_web(s, min(30, seconds), matcher) and ok
+            continue
         deadline = time.monotonic() + seconds
         title = None
         try:

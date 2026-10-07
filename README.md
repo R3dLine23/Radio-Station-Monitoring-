@@ -197,9 +197,11 @@ all charges.
 
 - `radio_monitor/web.py` fetches the station homepage (gzip, cache-busted) and reads
   the `now_playing` artist and title that the site's Next.js page embeds for its
-  player, picking the entry for the station's `call_letters`. If the page stops
-  containing that data, it raises an error, and you get a "monitoring is DOWN" alert
-  instead of the monitor silently going blind.
+  player, picking the entry for the station's `call_letters`. During ads or talk,
+  when the station shows no current song, it keeps the last one. If the station
+  disappears from the page for 3 minutes, you get a "monitoring is DOWN" alert
+  instead of the monitor silently going blind, and the first such page is saved
+  to `debug/<call letters>-no-song.html` for troubleshooting.
 - `radio_monitor/icy.py` is the other source type, for streams that do carry song
   titles. It connects with `Icy-MetaData: 1` and reads the `StreamTitle='...'` blocks.
   The Rogers streams (`rogers-hls.leanstream.co/.../icy`) only ever send the station

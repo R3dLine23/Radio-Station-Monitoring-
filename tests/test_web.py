@@ -1,11 +1,12 @@
 import gzip
 import json
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from itertools import islice
 
-from radio_monitor.icy import StreamError
 from radio_monitor.web import extract_now_playing, iter_web_metadata
 
 
@@ -61,6 +62,14 @@ class ExtractTest(unittest.TestCase):
     def test_between_songs(self):
         np = extract_now_playing(flight_page([("CKIS", None)]), "CKIS")
         self.assertEqual(np.display, "")
+        # Next.js serializes undefined as the string "$undefined".
+        np = extract_now_playing(flight_page([("CKIS", "$undefined")]), "CKIS")
+        self.assertIsNotNone(np)
+        self.assertEqual(np.display, "")
+
+    def test_prefers_entry_with_a_song(self):
+        page = flight_page([("CKIS", "$undefined"), ("CKIS", KISS_NP)])
+        self.assertEqual(extract_now_playing(page, "CKIS").title, "I Go Dancing")
 
     def test_plain_json(self):
         page = json.dumps({"call_letters": "CKIS", "now_playing": {"artist": "Backstreet Boys", "title": "The Call"}})
@@ -116,11 +125,21 @@ class PollTest(unittest.TestCase):
         self.assertIn("Backstreet Boys", items[1].searchable_text)
         self.assertTrue(all("_=" in p for p in _Pages.paths), _Pages.paths)  # cache-busting
 
-    def test_missing_data_raises(self):
-        _Pages.pages = ["<html>maintenance</html>"]
-        with self.assertRaises(StreamError):
-            next(iter_web_metadata(self.url, 5, poll_seconds=0, call_letters="CKIS"))
-
+    def test_gaps_keep_polling_and_save_the_page(self):
+        _Pages.pages = [
+            "<html>no player data</html>",                  # station missing: no yield
+            flight_page([("CKIS", "$undefined")]),          # between songs: heartbeat
+            flight_page([("CKIS", {"artist": "Backstreet Boys", "title": "The Call"})]),
+        ]
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertLogs("radio_monitor.web", "WARNING") as logs:
+                items = list(islice(iter_web_metadata(self.url, 5, poll_seconds=0,
+                                                      call_letters="CKIS", debug_dir=d), 2))
+            self.assertIsNone(items[0])
+            self.assertEqual(items[1].title, "Backstreet Boys - The Call")
+            saved = Path(d) / "CKIS-no-song.html"
+            self.assertEqual(saved.read_text(), "<html>no player data</html>")
+            self.assertTrue(any("no now_playing entry" in m for m in logs.output))
 
 if __name__ == "__main__":
     unittest.main()

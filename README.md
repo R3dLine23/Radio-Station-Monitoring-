@@ -109,12 +109,79 @@ docker compose logs -f
 ```
 (Set `history_file = "data/play_history.csv"` to keep the log outside the container.)
 
+**Google Cloud**: see [Run it on Google Cloud](#run-it-on-google-cloud) below.
+
 **Laptop**: `python3 -m radio_monitor` works fine, but turn off sleep. A sleeping
 laptop misses songs. You'll get a "monitoring is DOWN" alert when it wakes.
 
 Bandwidth: it downloads each audio stream (~48–128 kbps) and throws the audio away,
 so about 1–2.5 GB per station per day. That's no concern on home internet, but
 check the transfer limit before using a small VPS plan.
+
+## Run it on Google Cloud
+
+A small always-on Compute Engine VM runs the monitor as a system service. Everything
+below runs in **Cloud Shell** (the `>_` button at the top of
+[console.cloud.google.com](https://console.cloud.google.com)), so you don't need to
+install anything. Cloud Shell works from a phone browser too.
+
+You need a Google Cloud project with billing turned on. The free tier also needs a
+billing account on file.
+
+**1. Create the VM.** The startup script installs everything on first boot.
+Replace `YOUR-NTFY-TOPIC` with the topic you subscribed to in the ntfy app:
+
+```bash
+git clone https://github.com/R3dLine23/Radio-Station-Monitoring-.git
+cd Radio-Station-Monitoring-
+gcloud services enable compute.googleapis.com
+
+gcloud compute instances create radio-monitor \
+  --zone=northamerica-northeast2-a \
+  --machine-type=e2-micro \
+  --image-family=debian-12 --image-project=debian-cloud \
+  --metadata=ntfy-topic=YOUR-NTFY-TOPIC \
+  --metadata-from-file=startup-script=deploy/gcp/startup.sh
+```
+
+`northamerica-northeast2` is **Toronto**. Canadian stations sometimes block listeners
+outside Canada, and a Toronto VM avoids that. It costs roughly US$7–10/month,
+including the disk and public IP; the console shows the exact estimate. To try the
+**free tier** instead, use `--zone=us-central1-a --boot-disk-type=pd-standard`. If the
+check in step 2 shows `HTTP 403` for the stations there, the stream is blocking US
+listeners, so delete that VM and recreate it in Toronto.
+
+Bandwidth isn't a cost here: Google doesn't charge for incoming data, and the
+streams are all incoming.
+
+**2. Check that it's working** (give it about a minute after creation):
+
+```bash
+gcloud compute instances get-serial-port-output radio-monitor \
+  --zone=northamerica-northeast2-a | grep -A12 "checking that the stations"
+```
+
+Each station should show a `title:` line. Your phone should also get a
+**"Backstreet Boys monitor started"** push alert.
+
+**3. Watch the live log or change settings** (contest text numbers, extra titles):
+
+```bash
+gcloud compute ssh radio-monitor --zone=northamerica-northeast2-a
+
+# then, on the VM:
+sudo journalctl -u radio-monitor -f            # live log, Ctrl+C to exit
+sudo nano /opt/radio-monitor/config.toml       # edit text_number / text_message etc.
+sudo systemctl restart radio-monitor           # apply changes
+```
+
+**Updating:** reboot the VM
+(`gcloud compute instances reset radio-monitor --zone=northamerica-northeast2-a`). The
+startup script pulls the latest code from `main` and keeps your `config.toml`.
+
+**When the contest is over:**
+`gcloud compute instances delete radio-monitor --zone=northamerica-northeast2-a` stops
+all charges.
 
 ## How it works
 

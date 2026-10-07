@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from .icy import Metadata, iter_metadata
+from .web import iter_web_metadata
 from .matcher import Match, Matcher
 from .notifiers import Alert
 
@@ -26,6 +27,11 @@ class Station:
     url: str
     text_number: str = ""
     text_message: str = ""
+    # "web": poll a page with now_playing data (the Rogers station sites).
+    # "icy": read StreamTitle from a Shoutcast/Icecast stream.
+    source: str = "icy"
+    call_letters: str = ""      # web: pick this station's entry, e.g. "CKIS"
+    poll_seconds: float = 15    # web: how often to check the page
 
     def sms_link(self) -> str | None:
         """An ``sms:`` link that opens a text to the station with the message filled in."""
@@ -49,7 +55,16 @@ class Settings:
     notify_on_outage: bool = True
 
 
-MetadataSource = Callable[[str, float], Iterator["Metadata | None"]]
+MetadataSource = Callable[[Station, float], Iterator["Metadata | None"]]
+
+
+def open_station(station: Station, timeout: float) -> Iterator[Metadata | None]:
+    """Start reading now-playing data from the station's configured source."""
+    if station.source == "web":
+        return iter_web_metadata(station.url, timeout, station.poll_seconds, station.call_letters)
+    if station.source == "icy":
+        return iter_metadata(station.url, timeout)
+    raise ValueError(f"{station.name}: unknown source {station.source!r} (use 'web' or 'icy')")
 
 
 class Dispatcher:
@@ -84,7 +99,7 @@ class StationWatcher:
     """
 
     def __init__(self, station: Station, matcher: Matcher, dispatcher: Dispatcher,
-                 settings: Settings, source: MetadataSource = iter_metadata,
+                 settings: Settings, source: MetadataSource = open_station,
                  history: "PlayHistory | None" = None, clock: Callable[[], float] = time.monotonic):
         self.station = station
         self.matcher = matcher
@@ -184,7 +199,7 @@ class StationWatcher:
         while not stop.is_set():
             try:
                 log.info("[%s] connecting to %s", self.station.name, self.station.url)
-                for meta in self.source(self.station.url, self.settings.read_timeout_seconds):
+                for meta in self.source(self.station, self.settings.read_timeout_seconds):
                     if stop.is_set():
                         return
                     if not self.connected_once:
@@ -223,7 +238,7 @@ class PlayHistory:
 
 class Monitor:
     def __init__(self, stations: list[Station], matcher: Matcher, notifiers: list,
-                 settings: Settings, source: MetadataSource = iter_metadata):
+                 settings: Settings, source: MetadataSource = open_station):
         self.settings = settings
         self.dispatcher = Dispatcher(notifiers)
         history = PlayHistory(settings.history_file) if settings.history_file else None

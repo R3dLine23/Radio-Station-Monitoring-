@@ -10,32 +10,39 @@ import time
 from pathlib import Path
 
 from . import config as cfgmod
-from .icy import iter_metadata
-from .monitor import Monitor
+from .monitor import Monitor, open_station
 from .notifiers import Alert, ConsoleNotifier, build_notifiers
+
+
+def _looks_like_station_id(title: str) -> bool:
+    """True for titles like 'KiSS 92.5 Toronto - KiSS 92.5 Toronto'."""
+    left, sep, right = title.partition(" - ")
+    return bool(sep) and left.strip().lower() == right.strip().lower()
 
 
 def _probe(stations, seconds: float, matcher) -> int:
     """Connect to each station and print the raw metadata it sends."""
     ok = True
     for s in stations:
-        print(f"\n== {s.name}  ({s.url})")
+        print(f"\n== {s.name}  ({s.source}: {s.url})")
         deadline = time.monotonic() + seconds
-        got_title = False
+        title = None
         try:
-            for meta in iter_metadata(s.url, timeout=min(30, seconds)):
+            for meta in open_station(s, min(30, seconds)):
                 if meta is not None:
-                    got_title = True
-                    m = matcher.match(meta.searchable_text)
+                    title = meta.title
                     print(f"  raw:    {meta.raw}")
-                    print(f"  title:  {meta.title!r}   match: {m}")
+                    print(f"  title:  {title!r}   match: {matcher.match(meta.searchable_text)}")
                     break
                 if time.monotonic() > deadline:
                     break
-            if got_title:
-                print("  OK: connected and received a song title")
+            if not title:
+                print(f"  connected, but no title within {seconds:.0f}s (the station may be between songs)")
+            elif _looks_like_station_id(title):
+                ok = False
+                print("  WARNING: that's the station name, not a song. This source carries no song titles.")
             else:
-                print(f"  connected, but no title within {seconds:.0f}s (the station may be in an ad break)")
+                print("  OK: received a song title")
         except Exception as exc:  # noqa: BLE001
             ok = False
             print(f"  FAILED: {exc}")

@@ -4,9 +4,9 @@ Watches **KISS 92.5** and **CHFI 98.1** (Toronto) around the clock and alerts yo
 phone the moment either one starts playing a Backstreet Boys song, so you can text in
 for the contest before anyone else does.
 
-- **Real-time, no polling.** It reads the "now playing" metadata embedded in each
-  station's live stream. The station's playout system pushes a new title as soon as
-  the song changes, often a few seconds *before* you hear it.
+- **Fast detection.** Every 15 seconds it checks the "now playing" data each station
+  publishes on its own website (the same data the station's player shows), so a BSB
+  song is spotted within seconds of starting.
 - **Alerts that act.** On your phone, tap the alert and a text to the station opens
   with your contest keyword already typed.
 - **Watches itself.** If a station's feed drops, you get a "monitoring is DOWN" alert
@@ -60,7 +60,9 @@ Fill in each station's `text_number` and `text_message` from the contest rules:
 ```toml
 [[stations]]
 name = "KISS 92.5"
-url = "https://rogers-hls.leanstream.co/rogers/tor925.stream/icy"
+source = "web"
+url = "https://www.kiss925.com/"
+call_letters = "CKIS"
 text_number = "92592"      # whatever number the contest says
 text_message = "BACKSTREET"
 ```
@@ -114,9 +116,10 @@ docker compose logs -f
 **Laptop**: `python3 -m radio_monitor` works fine, but turn off sleep. A sleeping
 laptop misses songs. You'll get a "monitoring is DOWN" alert when it wakes.
 
-Bandwidth: it downloads each audio stream (~48–128 kbps) and throws the audio away,
-so about 1–2.5 GB per station per day. That's no concern on home internet, but
-check the transfer limit before using a small VPS plan.
+Bandwidth: each check downloads the station's homepage (compressed), roughly 1–2 GB
+per station per day at the default 15-second interval. That's no concern on home
+internet, and incoming data is free on Google Cloud. Raise `poll_seconds` to use
+less.
 
 ## Run it on Google Cloud
 
@@ -148,11 +151,11 @@ gcloud compute instances create radio-monitor \
 outside Canada, and a Toronto VM avoids that. It costs roughly US$7–10/month,
 including the disk and public IP; the console shows the exact estimate. To try the
 **free tier** instead, use `--zone=us-central1-a --boot-disk-type=pd-standard`. If the
-check in step 2 shows `HTTP 403` for the stations there, the stream is blocking US
-listeners, so delete that VM and recreate it in Toronto.
+check in step 2 shows `HTTP 403` for the stations there, the site is blocking US
+visitors, so delete that VM and recreate it in Toronto.
 
-Bandwidth isn't a cost here: Google doesn't charge for incoming data, and the
-streams are all incoming.
+Bandwidth isn't a cost here: Google doesn't charge for incoming data, and the page
+checks are all incoming.
 
 **2. Check that it's working** (give it about a minute after creation):
 
@@ -186,32 +189,36 @@ all charges.
 ## How it works
 
 ```
- KISS 92.5 stream ──┐                         ┌─> ntfy / Pushover / Telegram / SMS / webhook
-                    ├─> ICY metadata reader ─> matcher ─> dispatcher (all notifiers in parallel)
- CHFI 98.1 stream ──┘   (1 thread / station)      │
-                                                  └─> play_history.csv
+ kiss925.com  (every 15 s) ──┐                         ┌─> ntfy / Pushover / Telegram / SMS / webhook
+                             ├─> now_playing ─> matcher ─> dispatcher (all notifiers in parallel)
+ chfi.com     (every 15 s) ──┘   (1 thread / station)  │
+                                                       └─> play_history.csv
 ```
 
-- `radio_monitor/icy.py` connects with `Icy-MetaData: 1`. The server inserts a
-  `StreamTitle='...'` block every `icy-metaint` bytes. We discard the audio and keep
-  the metadata. It handles redirects, chunked encoding, the legacy `ICY 200 OK`
-  status line, and `HTTPS_PROXY`.
+- `radio_monitor/web.py` fetches the station homepage (gzip, cache-busted) and reads
+  the `now_playing` artist and title that the site's Next.js page embeds for its
+  player, picking the entry for the station's `call_letters`. If the page stops
+  containing that data, it raises an error, and you get a "monitoring is DOWN" alert
+  instead of the monitor silently going blind.
+- `radio_monitor/icy.py` is the other source type, for streams that do carry song
+  titles. It connects with `Icy-MetaData: 1` and reads the `StreamTitle='...'` blocks.
+  The Rogers streams (`rogers-hls.leanstream.co/.../icy`) only ever send the station
+  name, which is why KISS and CHFI use the website source.
 - `radio_monitor/monitor.py` sends one alert per play. Brief metadata flicker
   (a station ID between two halves of the same song) doesn't trigger a second
-  alert, but two different BSB songs back to back each get one. Dropped connections
-  reconnect with exponential backoff (2 s → 60 s).
+  alert, but two different BSB songs back to back each get one. Errors retry with
+  exponential backoff (2 s → 60 s).
 - `radio_monitor/matcher.py` holds the artist and title matching rules.
+- `tools/discover.py` investigates a new station: it watches the ICY/HLS metadata
+  and scans the website for now-playing data. It's how the website source was found.
 
 ### Adding or changing stations
 
-Any Shoutcast/Icecast stream with ICY metadata works. Add another `[[stations]]`
-block. For other Rogers stations, swap the frequency into the URL pattern
-`https://rogers-hls.leanstream.co/rogers/<city><freq>.stream/icy` and confirm with
-`--probe`.
-
-If `--probe` ever shows a station sending only its own name (no song titles), its
-stream metadata has been switched off. The monitor will still connect, but it can't
-see songs on that station until you swap in a different source.
+For other Rogers stations, use their homepage with `source = "web"` and the
+`call_letters` that `python3 tools/discover.py` shows next to `now_playing`. For any
+Shoutcast/Icecast stream that carries song titles, use `source = "icy"` with the
+stream URL. Either way, confirm with `--probe`, which warns you if a source only
+returns the station's own name.
 
 ## Development
 
@@ -219,5 +226,6 @@ see songs on that station until you swap in a different source.
 python3 -m unittest discover -s tests -t . -v
 ```
 
-The tests include a fake local ICY radio server, so the full pipeline (stream →
-match → alert) runs without network access.
+The tests include a fake local ICY radio server and a fake station website built
+from the real page structure, so the full pipeline (source → match → alert) runs
+without network access.

@@ -75,6 +75,19 @@ if [[ ! -f "$CONFIG" ]]; then
   chmod 600 "$CONFIG"
 fi
 
+# Upgrade configs created before the switch to the website source: the Rogers
+# ICY streams only ever send the station name. Keeps every other setting.
+if grep -q 'rogers-hls.leanstream.co/rogers/tor9[28][15].stream/icy' "$CONFIG"; then
+  log "switching KISS/CHFI in $CONFIG to the website now-playing source"
+  cp -p "$CONFIG" "$CONFIG.bak"
+  sed -i \
+    -e 's|^url = "https://rogers-hls.leanstream.co/rogers/tor925.stream/icy"|source = "web"\nurl = "https://www.kiss925.com/"\ncall_letters = "CKIS"|' \
+    -e 's|^url = "https://rogers-hls.leanstream.co/rogers/tor981.stream/icy"|source = "web"\nurl = "https://www.chfi.com/"\ncall_letters = "CHFI"|' \
+    "$CONFIG"
+  chown "$APP_USER:" "$CONFIG"   # sed -i writes a new, root-owned file
+  chmod 600 "$CONFIG"
+fi
+
 log "installing systemd service"
 sed -e "s|^User=.*|User=$APP_USER|" \
     -e "s|^WorkingDirectory=.*|WorkingDirectory=$APP_DIR|" \

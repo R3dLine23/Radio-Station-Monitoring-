@@ -11,9 +11,11 @@ from .matcher import DEFAULT_SONG_TITLES, Matcher
 from .monitor import Settings, Station
 
 # Used when the config file has no [[stations]] entries.
+# The Rogers ICY/HLS streams only carry the station name, so we read the song
+# from each station's website instead.
 DEFAULT_STATIONS = [
-    Station("KISS 92.5", "https://rogers-hls.leanstream.co/rogers/tor925.stream/icy"),
-    Station("CHFI 98.1", "https://rogers-hls.leanstream.co/rogers/tor981.stream/icy"),
+    Station("KISS 92.5", "https://www.kiss925.com/", source="web", call_letters="CKIS"),
+    Station("CHFI 98.1", "https://www.chfi.com/", source="web", call_letters="CHFI"),
 ]
 
 
@@ -43,9 +45,14 @@ def stations_from(cfg: dict) -> list[Station]:
         if not e.get("name") or not e.get("url"):
             raise ValueError(f"stations[{i}] needs both name and url")
         if e.get("enabled", True):
+            source = e.get("source", "icy")
+            if source not in ("icy", "web"):
+                raise ValueError(f"stations[{i}].source must be 'web' or 'icy', not {source!r}")
             stations.append(Station(
                 name=e["name"], url=e["url"],
                 text_number=str(e.get("text_number", "")), text_message=e.get("text_message", ""),
+                source=source, call_letters=e.get("call_letters", ""),
+                poll_seconds=float(e.get("poll_seconds", 15)),
             ))
     if not stations:
         raise ValueError("every station is disabled")

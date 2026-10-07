@@ -8,9 +8,12 @@
 # ---------------------------------------------------------------------------
 # Stations
 #
-# Both stations stream through Rogers' Leanstream CDN. The /icy endpoint
-# sends the "now playing" title inside the audio stream and updates it the
-# moment the song changes (often a few seconds before you hear it).
+# source = "web": check the station's homepage every poll_seconds and read the
+#   song from its built-in now_playing data. call_letters picks this
+#   station's entry. This is what KISS and CHFI need, because their audio
+#   streams (ICY/HLS) only carry the station name, never the song.
+# source = "icy": read StreamTitle from a Shoutcast/Icecast stream that does
+#   carry song titles (instant updates, no polling).
 #
 # text_number / text_message: fill these in from the contest rules. When you
 # tap the alert on your phone, it opens a text to that number with the
@@ -18,13 +21,19 @@
 # ---------------------------------------------------------------------------
 [[stations]]
 name = "KISS 92.5"
-url = "https://rogers-hls.leanstream.co/rogers/tor925.stream/icy"
+source = "web"
+url = "https://www.kiss925.com/"
+call_letters = "CKIS"
+poll_seconds = 15
 text_number = ""        # e.g. "92592", the contest text line
 text_message = ""       # e.g. "BACKSTREET", the contest keyword
 
 [[stations]]
 name = "CHFI 98.1"
-url = "https://rogers-hls.leanstream.co/rogers/tor981.stream/icy"
+source = "web"
+url = "https://www.chfi.com/"
+call_letters = "CHFI"
+poll_seconds = 15
 text_number = ""
 text_message = ""
 

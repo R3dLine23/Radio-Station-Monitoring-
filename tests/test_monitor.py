@@ -2,9 +2,8 @@ import threading
 import time
 import unittest
 
-from radio_monitor.icy import iter_metadata
 from radio_monitor.matcher import Matcher
-from radio_monitor.monitor import Dispatcher, Monitor, Settings, Station, StationWatcher
+from radio_monitor.monitor import Dispatcher, Monitor, Settings, Station, StationWatcher, open_station
 
 from .fake_icy_server import FakeIcyServer
 
@@ -99,13 +98,35 @@ class WatcherTest(unittest.TestCase):
 
 
 class EndToEndTest(unittest.TestCase):
+    def test_monitor_against_fake_website(self):
+        from .test_web import PollTest, _Pages, flight_page
+        PollTest.setUpClass()
+        try:
+            _Pages.pages = [
+                flight_page([("CKIS", {"artist": "Dua Lipa", "title": "Levitating"})]),
+                flight_page([("CKIS", {"artist": "Backstreet Boys", "title": "Larger Than Life"})]),
+            ]
+            station = Station("KISS 92.5", PollTest.url, source="web", call_letters="CKIS", poll_seconds=0.05)
+            notifier = RecordingNotifier()
+            mon = Monitor([station], Matcher(), [notifier], Settings(notify_on_start=False))
+            t = threading.Thread(target=mon.run, daemon=True)
+            t.start()
+            self.assertTrue(notifier.got_bsb.wait(10))
+            mon.stop()
+            t.join(timeout=5)
+            hits = [a for a in notifier.alerts if "BACKSTREET" in a.title]
+            self.assertEqual(len(hits), 1)  # polled many times, alerted once
+            self.assertIn("Backstreet Boys - Larger Than Life", hits[0].message)
+        finally:
+            PollTest.tearDownClass()
+
     def test_monitor_against_fake_stream(self):
         server = FakeIcyServer(["Harry Styles - As It Was", "Backstreet Boys - I Want It That Way"],
                                status_line=b"ICY 200 OK")
         stations = [Station("KISS 92.5", server.url), Station("CHFI 98.1", server.url)]
         notifier = RecordingNotifier()
         settings = Settings(reconnect_min_seconds=0.2, read_timeout_seconds=5, notify_on_start=False)
-        mon = Monitor(stations, Matcher(), [notifier], settings, source=iter_metadata)
+        mon = Monitor(stations, Matcher(), [notifier], settings, source=open_station)
         t = threading.Thread(target=mon.run, daemon=True)
         t.start()
         try:
